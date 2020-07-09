@@ -709,19 +709,72 @@ if delete_intermediate_layers == True:
     arcpy.Delete_management(out_p2r)
 
 
+
 #================================
 # WRAP-UP
 #================================ 
 
 # final export
-maz_remm_data.to_file(os.path.join(temp_dir, "microzones.shp"))
-print('DONE!')
+final_zones = os.path.join(temp_dir, "microzones.shp")
+maz_remm_data.to_file(final_zones)
 
 
+# add area sq meters and sq miles
+print("Adding area calculations...")
 
+arcpy.AddField_management(final_zones, field_name="area_sqm", field_type='float')
+arcpy.AddField_management(final_zones, field_name="area_acres", field_type='float')
 
+with arcpy.da.UpdateCursor(final_zones, ['area_sqm', 'area_acres', 'SHAPE@AREA']) as cursor:
+    for row in cursor:
+        row[0] = row[2]
+        row[1] = row[2] * 0.000247105 # convert to acres
+        cursor.updateRow(row)
 
+print('Zones complete!!')
 
+del buildings
+del buildings_filtered
+del buildings_grouped
+del cr_lyr
+del cursor
+del enrollment_lyr
+del fieldmappings
+del filled_zones
+del lr_lyr
+del maz_clipped
+del maz_ce_join_df
+del maz_cr_join_df
+del maz_lr_join_df
+del maz_park_join_df
+del merged_roads
+del merged_zones
+del microzones
+del microzones_no_rings
+del microzones_rings_erased
+del parks_lyr
+del prelim_zones
+del roads_clipped
+del roads_layer
+del row
+del schools_lyr
+del shape
+del taz_dissolved
+del taz_join
+del taz_join2
+del taz_join3
+del taz_join_filt
+del taz_layer
+del taz_outline
+del taz_se_data
+del taz_se_data2
+del taz_se_data3
+del trail_heads_lyr
+del zonal_table
+del zones_eliminated
+del zones_eliminated2
+del zones_layer
+del zones_layer2
 
 
 
