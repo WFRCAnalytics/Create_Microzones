@@ -13,6 +13,7 @@ import arcpy
 import os
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 arcpy.env.overwriteOutput = True
 arcpy.CheckOutExtension("Spatial")
 
@@ -47,7 +48,7 @@ nodes = r"E:\Projects\Network-To-Graph-Tool\Results\nodes.shp"
 
 
 # Other
-temp_dir = os.path.join(os.getcwd(), 'Output')
+temp_dir = os.path.join(os.getcwd(), 'Results')
 delete_intermediate_layers = True
 
 #====================
@@ -210,7 +211,8 @@ arcpy.CalculateField_management(merged_zones,"zone_id",'!{}!'.format('FID'))
 
 # perform spatial join to get TAZ ID - may need more robust method for zones that cross multiple Tazs
 print('Getting TAZ ids...')
-microzones = arcpy.SpatialJoin_analysis(merged_zones, taz_polygons, os.path.join(temp_dir, 'maz_taz.shp'),'JOIN_ONE_TO_ONE', '', '', 'HAVE_THEIR_CENTER_IN')
+microzones = os.path.join(temp_dir, 'maz_taz.shp')
+arcpy.SpatialJoin_analysis(merged_zones, taz_polygons, microzones,'JOIN_ONE_TO_ONE', '', '', 'HAVE_THEIR_CENTER_IN')
 
 # Delete extra fields
 fields = ["Join_Count", 'TARGET_FID', 'Id', 'ORIG_FID', 'OBJECTID', 'rings', 'parts']
@@ -230,18 +232,9 @@ microzones_geom =  os.path.join(temp_dir, "maz_clipped.shp")
 maz_clipped = arcpy.Clip_analysis(microzones, taz_layer, microzones_geom)
 
 
-# Delete intermediate files (optional)
-if delete_intermediate_layers == True:
-    print('Doing some clean-up...')
-    trash = [filled_zones, zones_layer, zones_layer2, merged_roads, merged_zones, microzones_no_rings, microzones_rings_erased, prelim_zones, roads_clipped, taz_dissolved, taz_outline, zones_eliminated, zones_eliminated2, microzones]
-    print("Deleting intermediate files...")
-    for dataset in trash:
-        try:
-            arcpy.Delete_management(dataset)
-            del(dataset)
-        except:
-            print('A file was unable to be deleted')
 
+    
+ 
 
 #============================================
 #============================================
@@ -293,11 +286,13 @@ parcels = parcels[['parcel_id', 'geometry']]
 parcels_join = parcels.merge(buildings_grouped, left_on = 'parcel_id', right_on = 'parcel_id' , how = 'inner')
 
 # export to shape
-parcels_join.to_file(os.path.join(temp_dir, "parcels_with_aggd_buildings_data.shp"))
+parcels_aggd_buildings = os.path.join(temp_dir, "parcels_with_aggd_buildings_data.shp")
+parcels_join.to_file(parcels_aggd_buildings)
 
 # convert parcels to points centroids
 print('Converting parcels to points...')
-arcpy.FeatureToPoint_management(os.path.join(temp_dir, "parcels_with_aggd_buildings_data.shp"), os.path.join(temp_dir, "pts_with_aggd_buildings_data.shp"), "INSIDE")
+pts_aggd_buildings = os.path.join(temp_dir, "pts_with_aggd_buildings_data.shp")
+arcpy.FeatureToPoint_management(os.path.join(temp_dir, "parcels_with_aggd_buildings_data.shp"), pts_aggd_buildings, "INSIDE")
 
 # spatial join here
 target_features = os.path.join(temp_dir, "maz_clipped.shp")
@@ -327,15 +322,11 @@ maz_output = os.path.join(temp_dir, "microzones_with_remm_data.shp")
 maz_remm_data.to_file(maz_output)
 
 # Free up memory
-print('doing some clean-up...')
-trash = [buildings, buildings_filtered, buildings_grouped, parcels, parcels_join]
-for dataset in trash:
-    try:
-        del dataset
-    except:
-        print('A file was unable to be deleted')
-
-
+del buildings
+del buildings_filtered
+del buildings_grouped
+del parcels
+del parcels_join
 
 #==================================
 # Disaggregate TAZ level SE data
@@ -425,25 +416,21 @@ for field in taz_fields:
     
 
 # normalize school enrollment data
-maz_remm_data['ENROL_ELEM'] = maz_remm_data['ENROL_ELEM']/maz_remm_data['population']
-maz_remm_data['ENROL_MIDL'] = maz_remm_data['ENROL_MIDL']/maz_remm_data['population']
-maz_remm_data['ENROL_HIGH'] = maz_remm_data['ENROL_HIGH']/maz_remm_data['population']
+maz_remm_data['ENROL_ELEM'] = (maz_remm_data['ENROL_ELEM']/maz_remm_data['population']).replace(np.inf, 0)
+maz_remm_data['ENROL_MIDL'] = (maz_remm_data['ENROL_MIDL']/maz_remm_data['population']).replace(np.inf, 0)
+maz_remm_data['ENROL_HIGH'] = (maz_remm_data['ENROL_HIGH']/maz_remm_data['population']).replace(np.inf, 0)
 
 # normalize income group data
 totalpop = maz_remm_data['INC1'] + maz_remm_data['INC2'] + maz_remm_data['INC3'] + maz_remm_data['INC4']
-maz_remm_data['INC1'] = maz_remm_data['INC1']/totalpop
-maz_remm_data['INC2'] = maz_remm_data['INC2']/totalpop
-maz_remm_data['INC3'] = maz_remm_data['INC3']/totalpop
-maz_remm_data['INC4'] = maz_remm_data['INC4']/totalpop
+maz_remm_data['INC1'] = (maz_remm_data['INC1']/totalpop).replace(np.inf, 0)
+maz_remm_data['INC2'] = (maz_remm_data['INC2']/totalpop).replace(np.inf, 0)
+maz_remm_data['INC3'] = (maz_remm_data['INC3']/totalpop).replace(np.inf, 0)
+maz_remm_data['INC4'] = (maz_remm_data['INC4']/totalpop).replace(np.inf, 0)
 
 # Free up memory
-print('Doing some clean-up...')
-trash = [taz_se_data, taz_se_data2, zonal_table]
-for dataset in trash:
-    try:
-        del dataset
-    except:
-        print('A file was unable to be deleted')
+del taz_se_data
+del taz_se_data2
+del zonal_table
 
 
 #===================
@@ -729,11 +716,8 @@ zonal_table.columns = ['zone_id', field]
 zonal_table['zone_id'] = zonal_table['zone_id'].astype(str)
 maz_remm_data = maz_remm_data.merge(zonal_table, left_on = 'zone_id', right_on = 'zone_id' , how = 'inner')
 
-# delete the raster
-if delete_intermediate_layers == True:
-    arcpy.Delete_management(out_table)
-    arcpy.Delete_management(out_table_csv)
-    arcpy.Delete_management(out_p2r)
+
+
 
 #----------------------
 # Centroid Node 
@@ -770,7 +754,7 @@ maz_remm_data['jobs_total'] = maz_remm_data['jobs1']+ maz_remm_data['jobs3'] + m
 print("Working on mixed use...")
 
 # create mixed use attribute (fill NAs from dividing by 0, with 0)
-maz_remm_data['MIXED_USE'] = (maz_remm_data['households'] * maz_remm_data['jobs_total']) / (maz_remm_data['households'] + maz_remm_data['jobs_total'])
+maz_remm_data['MIXED_USE'] = ((maz_remm_data['households'] * maz_remm_data['jobs_total']) / (maz_remm_data['households'] + maz_remm_data['jobs_total'])).replace(np.inf, 0)
 maz_remm_data['MIXED_USE'].fillna(0, inplace=True)
 
 
@@ -792,9 +776,43 @@ arcpy.TableToTable_conversion(final_zones, temp_dir, 'microzones.csv')
 
 print('Zones complete!!')
 
-del buildings
-del buildings_filtered
-del buildings_grouped
+
+print('Clean-up')
+arcpy.Delete_management(filled_zones)
+arcpy.Delete_management(zones_layer) 
+arcpy.Delete_management(zones_layer2) 
+arcpy.Delete_management(merged_roads) 
+arcpy.Delete_management(merged_zones) 
+arcpy.Delete_management(microzones_no_rings) 
+arcpy.Delete_management(microzones_rings_erased) 
+arcpy.Delete_management(prelim_zones) 
+arcpy.Delete_management(roads_clipped)
+arcpy.Delete_management(taz_dissolved) 
+arcpy.Delete_management(taz_outline)
+arcpy.Delete_management(zones_eliminated) 
+arcpy.Delete_management(zones_eliminated2)
+arcpy.Delete_management(out_table)
+arcpy.Delete_management(out_table_csv)
+arcpy.Delete_management(out_p2r)
+arcpy.Delete_management(maz_ce_join)
+arcpy.Delete_management(maz_centroids)
+arcpy.Delete_management(target_features)
+arcpy.Delete_management(maz_cr_join)
+arcpy.Delete_management(maz_lr_join)
+arcpy.Delete_management(maz_th_join)
+arcpy.Delete_management(out_taz_data)
+arcpy.Delete_management(output_features)
+arcpy.Delete_management(maz_park_identity)
+arcpy.Delete_management(maz_park_join)
+arcpy.Delete_management(maz_park_join2)
+arcpy.Delete_management(parcels_aggd_buildings)
+arcpy.Delete_management(maz_school_join)
+arcpy.Delete_management(pts_aggd_buildings)
+arcpy.Delete_management(park_points)
+arcpy.Delete_management(maz_output)
+arcpy.Delete_management(microzones)
+
+
 del cr_lyr
 del cursor
 del enrollment_lyr
@@ -825,8 +843,6 @@ del taz_join3
 del taz_join_filt
 del taz_layer
 del taz_outline
-del taz_se_data
-del taz_se_data2
 del taz_se_data3
 del trail_heads_lyr
 del zonal_table
